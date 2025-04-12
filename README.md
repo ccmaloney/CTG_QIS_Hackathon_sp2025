@@ -83,11 +83,18 @@ Install Jupyter Kernel
 python -m ipykernel install --user --name=quant-strategy --display-name "Quant Strategy"
 ```
 
-Launch Jupyter Notebook
+Launch Jupyter Notebook (from within the virtual environment)
 
 ```bash
-jupyter notebook
+python -m notebook
 ```
+
+If you would like to exit the virtual env, then run
+
+```bash
+deactivate
+```
+
 
 #### Option 2: Using Poetry (Recommended for more advanced users)
 
