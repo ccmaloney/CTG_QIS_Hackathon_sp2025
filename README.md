@@ -10,15 +10,16 @@ This framework is designed for participants with varying levels of technical exp
 
 - **User-friendly interface**: Easy to use for participants with limited technical experience
 - **Iterator-style data slicing**: Automatically moves through trading days and slices data
-- **Flexible strategy implementation**: Implement your strategy by overriding a single method
+- **Flexible strategy implementation**: Implement your strategy by implementing the `BaseStrategy` abstract class
 - **Comprehensive documentation**: Well-documented code with examples
 - **Jupyter Notebook integration**: Ready to use in a Jupyter Notebook environment
+- **DataFrame output**: Returns portfolio weights in a structured DataFrame format for easy analysis
 
 ## Getting Started
 
 ### Prerequisites
 
-- Python 3.7+
+- Python 3.8.1+
 - pandas
 - numpy
 - matplotlib (for visualization)
@@ -69,58 +70,71 @@ If you prefer using Poetry for dependency management:
    poetry run jupyter lab
    ```
 
+5. Create a Jupyter kernel for your project (optional but recommended):
+   ```bash
+   poetry run python -m ipykernel install --user --name quant-strategy --display-name "Quant Strategy"
+   ```
+
 ### Usage
 
 1. Import the framework in your Jupyter Notebook:
 
 ```python
-from quant_strategy_framework import QuantStrategyFramework
+from quant_strategy_framework import QuantStrategyFramework, BaseStrategy
 ```
 
-2. Create your strategy by subclassing `QuantStrategyFramework` and implementing the `construct_insights` method:
+2. Create your strategy by implementing the `BaseStrategy` abstract class:
 
 ```python
-class MyStrategy(QuantStrategyFramework):
-    def construct_insights(self, sliced_data, current_date):
+class MyStrategy(BaseStrategy):
+    def construct_insights(self, model_state, current_date):
         # Implement your strategy logic here
         
         # Return a dictionary with portfolio weights
         return {
             'timestamp': current_date,
             'weights': {
-                'ASSET1': 0.5,
-                'ASSET2': 0.3,
-                'ASSET3': 0.2
+                'TICKER1': 0.5,
+                'TICKER2': 0.3,
+                'TICKER3': 0.2
             }
         }
 ```
 
-3. Initialize your strategy with your dataset:
+3. Initialize the framework with your strategy and dataset:
 
 ```python
-strategy = MyStrategy(
+# Create strategy instance
+my_strategy = MyStrategy()
+
+# Initialize framework
+framework = QuantStrategyFramework(
     data=your_dataset,
+    strategy=my_strategy,
     date_column='Date',  # name of the date column
-    asset_column='Asset',  # name of the asset identifier column
     start_date='2023-01-01'  # optional start date
 )
 ```
 
-4. Run your strategy to generate insights:
+4. Run the strategy to generate insights as a DataFrame:
 
 ```python
-insights = strategy.run_strategy()
+insights_df = framework.run_strategy()
 ```
 
-5. Analyze your insights:
+5. Analyze your insights (now in DataFrame format):
 
 ```python
-for insight in insights[:5]:  # Look at first 5 days
-    print(f"Date: {insight['timestamp'].strftime('%Y-%m-%d')}")
-    print("Portfolio Weights:")
-    for asset, weight in insight['weights'].items():
-        print(f"  {asset}: {weight:.2f}")
-    print("-" * 40)
+# First 5 rows of the insights DataFrame
+print(insights_df.head())
+
+# Plot the portfolio weights over time
+import matplotlib.pyplot as plt
+
+plot_df = insights_df.set_index('date')
+plot_df.plot.area(stacked=True)
+plt.title('Portfolio Weights Over Time')
+plt.show()
 ```
 
 ## Example
@@ -135,11 +149,12 @@ Check out the included Jupyter Notebook `quant_strategy_example.ipynb` for a com
 
 The framework operates through these main components:
 
-1. **Initialization**: Load your dataset and configure parameters
-2. **Iteration**: Move through trading days one at a time
-3. **Data Slicing**: For each day, the framework slices data up to that day
-4. **Strategy Execution**: Your strategy generates portfolio weights based on available data
-5. **Insights Collection**: Portfolio weights are collected for each trading day
+1. **Strategy Definition**: Implement the `BaseStrategy` abstract class to define your investment logic
+2. **Framework Initialization**: Load your dataset and create a framework instance with your strategy
+3. **Iteration**: The framework moves through trading days one at a time
+4. **Data Slicing**: For each day, the framework slices data up to that day and passes it to your strategy
+5. **Strategy Execution**: Your strategy generates portfolio weights based on available data
+6. **DataFrame Output**: Portfolio weights are compiled into a DataFrame with dates as rows and tickers as columns
 
 ## Contributing
 
