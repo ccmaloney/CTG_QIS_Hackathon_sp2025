@@ -58,6 +58,33 @@ Install dependencies using pip:
 pip install -r requirements.txt
 ```
 
+Create a virtual environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate  # Mac/Linux
+venv\Scripts\activate     # Windows
+```
+
+Install the requirements
+
+```bash
+pip install --upgrade pip  # recommended
+pip install -r requirements.txt
+```
+
+Install Jupyter Kernel
+
+```bash
+python -m ipykernel install --user --name=quant-strategy --display-name "Quant Strategy"
+```
+
+Launch Jupyter Notebook
+
+```bash
+jupyter notebook
+```
+
 #### Option 2: Using Poetry (Recommended for more advanced users)
 
 If you prefer using Poetry for dependency management:
