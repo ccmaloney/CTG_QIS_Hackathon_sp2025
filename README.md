@@ -24,8 +24,24 @@ This framework is designed for participants with varying levels of technical exp
 - numpy
 - matplotlib (for visualization)
 - jupyterlab/notebook (for running examples)
+- VSCode or PyCharm recommended
 
 ### Installation
+
+
+To download and setup VSCode please follow the instructions here:
+
+```bash
+https://code.visualstudio.com/download
+```
+
+To download and setup PyCharm please follow the instructions here:
+
+```bash
+https://www.jetbrains.com/pycharm/download/?section=mac
+```
+
+NOTE: To register for an account, please use your academic license.
 
 Clone this repository:
 
