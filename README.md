@@ -58,8 +58,16 @@ Create a virtual environment
 
 ```bash
 python3 -m venv venv
-source venv/bin/activate  # Mac/Linux
-venv\Scripts\activate     # Windows
+```
+
+For Mac
+```bash
+source venv/bin/activate
+```
+
+For Windows
+```
+venv\Scripts\activate
 ```
 
 Install the requirements
