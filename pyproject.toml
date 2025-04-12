@@ -1,0 +1,33 @@
+[tool.poetry]
+name = "quant-strategy-framework"
+version = "0.1.0"
+description = "A simple framework for developing quantitative investment strategies during hackathons"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+license = "MIT"
+packages = [{include = "quant_strategy_framework.py"}]
+
+[tool.poetry.dependencies]
+python = ">=3.8.1,<4.0"
+pandas = ">=1.3.0"
+numpy = ">=1.20.0"
+matplotlib = ">=3.4.0"
+jupyterlab = ">=3.0.0"
+notebook = ">=6.4.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.dev-dependencies]
+black = "^23.3.0"
+isort = "^5.12.0"
+flake8 = "^6.0.0"
+
+[tool.black]
+line-length = 88
+target-version = ['py37']
+
+[tool.isort]
+profile = "black"
+line_length = 88 
