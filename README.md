@@ -54,10 +54,6 @@ cd CTG_QIS_Hackathon_sp2025
 
 Install dependencies using pip:
 
-```bash
-pip install -r requirements.txt
-```
-
 Create a virtual environment
 
 ```bash
