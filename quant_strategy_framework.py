@@ -11,8 +11,10 @@ interface for strategy implementation.
 
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Dict, Any, Union, List, Optional, Tuple
+from typing import Dict, Any, Union, List, Optional, Tuple, Callable
 from abc import ABC, abstractmethod
+import multiprocessing
+from functools import partial
 
 
 class BaseStrategy(ABC):
@@ -51,20 +53,37 @@ class BaseStrategy(ABC):
         """
         pass
 
+    def construct_insights_multi(
+        self, data: pd.DataFrame, dates: List[pd.Timestamp]
+    ) -> List[Dict[str, Any]]:
+        """
+        Process multiple dates in parallel for improved performance.
+
+        By default, this method calls construct_insights sequentially for each date.
+        Override this method for custom parallel implementation.
+
+        Args:
+            data: Complete DataFrame containing all data needed for all dates.
+            dates: List of dates to process.
+
+        Returns:
+            List of insight dictionaries, one for each date.
+        """
+        insights = []
+        for date in dates:
+            # Slice data up to this date
+            model_state = data[data[data.columns[0]] <= date]
+            insight = self.construct_insights(model_state, date)
+            insights.append(insight)
+        return insights
+
 
 class QuantStrategyFramework:
     """
-    A framework for developing and testing quantitative investment strategies.
+    A simplified framework for developing and testing quantitative investment strategies.
 
-    This framework provides an iterator-style interface that moves through trading days,
-    slices the data up to the current day, and passes it to a strategy function.
-
-    Attributes:
-        data (pd.DataFrame): The complete dataset including OHLC(V) and additional features.
-        date_column (str): The name of the date column in the dataset.
-        current_date (pd.Timestamp): The current trading day in the iteration.
-        start_date (pd.Timestamp): The starting date for the strategy execution.
-        strategy (BaseStrategy): The strategy implementation to use.
+    This framework handles day-by-day iteration through trading days and provides
+    a clean interface for strategy implementation with optimized dataframe operations.
     """
 
     def __init__(
@@ -78,137 +97,185 @@ class QuantStrategyFramework:
         Initialize the QuantStrategyFramework with the dataset and strategy.
 
         Args:
-            data: DataFrame containing OHLC(V) data and additional features (the Model State).
+            data: DataFrame containing OHLC(V) data and additional features.
             strategy: An instance of a class implementing BaseStrategy.
             date_column: Name of the column containing date information.
             start_date: The date to start the strategy (defaults to the first date in the dataset).
         """
-        # Ensure the date column is properly formatted
-        if date_column in data.columns:
-            if not pd.api.types.is_datetime64_any_dtype(data[date_column]):
-                data[date_column] = pd.to_datetime(data[date_column])
-        else:
+        # Process input data
+        if date_column not in data.columns:
             raise ValueError(f"Date column '{date_column}' not found in the dataset")
 
-        # Sort data by date
+        # Ensure the date column is datetime type
+        if not pd.api.types.is_datetime64_any_dtype(data[date_column]):
+            data[date_column] = pd.to_datetime(data[date_column])
+
+        # Store sorted data by date for efficient slicing
         self.data = data.sort_values(by=date_column).reset_index(drop=True)
         self.date_column = date_column
-
-        # Store the strategy
         self.strategy = strategy
 
-        # Extract unique dates from the dataset
-        self.trading_dates = self.data[date_column].unique()
+        # Extract unique trading dates once and store them
+        self.trading_dates = sorted(self.data[date_column].unique())
 
         # Set the start date
         if start_date is None:
             self.start_date = self.trading_dates[0]
         else:
             self.start_date = pd.Timestamp(start_date)
+            # Adjust if start date is before first available date
             if self.start_date < self.trading_dates[0]:
                 self.start_date = self.trading_dates[0]
-                print(
-                    f"Warning: Provided start_date is before the first available date. "
-                    f"Using {self.start_date} instead."
-                )
+                print(f"Warning: Using first available date {self.start_date} instead.")
 
-        # Initialize the current date
-        self.current_date = None
-        self.current_date_index = -1
-
-    def __iter__(self):
+    def _process_batch(self, batch_dates: List[pd.Timestamp]) -> List[Dict[str, Any]]:
         """
-        Initialize the iterator.
+        Process a batch of dates and return insights.
+
+        Args:
+            batch_dates: List of dates to process.
 
         Returns:
-            The framework instance.
+            List of insight dictionaries.
         """
-        # Find the index for the start date
-        for i, date in enumerate(self.trading_dates):
-            if date >= self.start_date:
-                self.current_date_index = (
-                    i - 1
-                )  # Set to before start so first next() gives start date
-                break
-
-        if self.current_date_index == -1 and len(self.trading_dates) > 0:
-            self.current_date_index = -1  # Start from the beginning
-
-        return self
-
-    def __next__(self) -> Tuple[pd.Timestamp, pd.DataFrame]:
-        """
-        Advance to the next trading day.
-
-        Returns:
-            tuple: (current_date, sliced_data)
-
-        Raises:
-            StopIteration: When there are no more trading days.
-        """
-        self.current_date_index += 1
-
-        if self.current_date_index >= len(self.trading_dates):
-            raise StopIteration
-
-        self.current_date = self.trading_dates[self.current_date_index]
-
-        # Slice the data up to and including the current date
-        sliced_data = self.data[self.data[self.date_column] <= self.current_date].copy()
-
-        return self.current_date, sliced_data
+        return self.strategy.construct_insights_multi(self.data, batch_dates)
 
     def run_strategy(self) -> pd.DataFrame:
         """
         Run the investment strategy from the start date to the end of available data.
 
+        This method processes each trading day sequentially, providing the strategy
+        with data up to and including the current date.
+
         Returns:
-            A DataFrame with dates as rows and tickers as columns, where each cell
-            contains the portfolio weight for that ticker on that date.
+            A DataFrame with dates as rows and tickers as columns, containing portfolio weights.
         """
         all_insights = []
+        all_tickers = set()
 
-        for current_date, sliced_data in self:
+        # Find start index for efficiency
+        start_idx = 0
+        for i, date in enumerate(self.trading_dates):
+            if date >= self.start_date:
+                start_idx = i
+                break
+
+        # Process each trading day
+        for i in range(start_idx, len(self.trading_dates)):
+            current_date = self.trading_dates[i]
+
+            # Optimized slicing using boolean indexing
+            sliced_data = self.data[self.data[self.date_column] <= current_date]
+
+            # Get insights from strategy
             insight = self.strategy.construct_insights(sliced_data, current_date)
 
-            # Ensure the insight has the correct format
+            # Validate insight format
             if (
                 not isinstance(insight, dict)
                 or "timestamp" not in insight
                 or "weights" not in insight
             ):
                 raise ValueError(
-                    f"Strategy returned invalid insight format. Expected dict with 'timestamp' and 'weights' keys, "
-                    f"got {insight}"
+                    f"Strategy returned invalid insight format at {current_date}"
                 )
 
+            # Track all tickers for final dataframe construction
+            all_tickers.update(insight["weights"].keys())
             all_insights.append(insight)
 
-        # Convert the list of insights to a DataFrame
+        # Convert insights to DataFrame efficiently
         if not all_insights:
-            return pd.DataFrame()  # Return empty DataFrame if no insights
+            return pd.DataFrame()
 
-        # Extract all unique tickers from all insights
-        all_tickers = set()
-        for insight in all_insights:
-            all_tickers.update(insight["weights"].keys())
-
-        # Create rows for the DataFrame
+        # Create DataFrame with consistent columns for all tickers
         rows = []
         for insight in all_insights:
             row = {"date": insight["timestamp"]}
-            # Add weight for each ticker, defaulting to 0 if not allocated
+            # Add weight for each ticker (default 0 if not allocated)
             for ticker in all_tickers:
                 row[ticker] = insight["weights"].get(ticker, 0.0)
             rows.append(row)
 
-        # Create and return the DataFrame
-        insights_df = pd.DataFrame(rows)
+        # Create and return sorted DataFrame
+        return pd.DataFrame(rows).sort_values("date")
 
-        # Sort by date
-        insights_df = insights_df.sort_values("date")
+    def run_strategy_parallel(
+        self, num_processes: int = None, batch_size: int = 10
+    ) -> pd.DataFrame:
+        """
+        Run the investment strategy in parallel using multiprocessing.
 
-        return insights_df
+        This method splits the trading dates into batches and processes them in parallel,
+        which can significantly speed up execution for computationally intensive strategies.
+
+        Args:
+            num_processes: Number of processes to use. If None, uses CPU count.
+            batch_size: Number of dates to process in each batch.
+
+        Returns:
+            A DataFrame with dates as rows and tickers as columns, containing portfolio weights.
+        """
+        # Determine number of processes to use
+        if num_processes is None:
+            num_processes = min(multiprocessing.cpu_count(), 4)  # Reasonable default
+
+        # Find start index
+        start_idx = 0
+        for i, date in enumerate(self.trading_dates):
+            if date >= self.start_date:
+                start_idx = i
+                break
+
+        # Get trading dates to process
+        dates_to_process = self.trading_dates[start_idx:]
+
+        if not dates_to_process:
+            return pd.DataFrame()
+
+        # Create batches of dates (avoid too many small batches for efficiency)
+        date_batches = []
+        for i in range(0, len(dates_to_process), batch_size):
+            date_batches.append(dates_to_process[i : i + batch_size])
+
+        # Process batches in parallel
+        all_insights = []
+        all_tickers = set()
+
+        # Use multiprocessing Pool to process batches
+        with multiprocessing.Pool(processes=num_processes) as pool:
+            batch_results = pool.map(self._process_batch, date_batches)
+
+            # Flatten results and collect insights
+            for batch_insights in batch_results:
+                for insight in batch_insights:
+                    # Validate insight format
+                    if (
+                        not isinstance(insight, dict)
+                        or "timestamp" not in insight
+                        or "weights" not in insight
+                    ):
+                        raise ValueError(f"Strategy returned invalid insight format")
+
+                    # Track all tickers
+                    all_tickers.update(insight["weights"].keys())
+                    all_insights.append(insight)
+
+        # Convert insights to DataFrame efficiently
+        if not all_insights:
+            return pd.DataFrame()
+
+        # Create DataFrame with consistent columns for all tickers
+        rows = []
+        for insight in all_insights:
+            row = {"date": insight["timestamp"]}
+            # Add weight for each ticker (default 0 if not allocated)
+            for ticker in all_tickers:
+                row[ticker] = insight["weights"].get(ticker, 0.0)
+            rows.append(row)
+
+        # Create and return sorted DataFrame
+        return pd.DataFrame(rows).sort_values("date")
 
 
 class EqualWeightStrategy(BaseStrategy):
@@ -242,6 +309,43 @@ class EqualWeightStrategy(BaseStrategy):
                 weights[ticker] = equal_weight
 
         return {"timestamp": current_date, "weights": weights}
+
+    def construct_insights_multi(
+        self, data: pd.DataFrame, dates: List[pd.Timestamp]
+    ) -> List[Dict[str, Any]]:
+        """
+        Optimized implementation for processing multiple dates in parallel.
+
+        This implementation is more efficient than the default method by
+        avoiding redundant calculations across dates.
+
+        Args:
+            data: Complete DataFrame.
+            dates: List of dates to process.
+
+        Returns:
+            List of insight dictionaries.
+        """
+        insights = []
+        date_column = data.columns[0]  # Assuming first column is date column
+
+        for date in dates:
+            # For equal weight strategy, we just need the tickers at each date
+            date_data = data[data[date_column] <= date]
+            tickers = []
+            if "ticker" in date_data.columns:
+                tickers = date_data["ticker"].unique().tolist()
+
+            # Calculate weights
+            weights = {}
+            if tickers:
+                equal_weight = 1.0 / len(tickers)
+                for ticker in tickers:
+                    weights[ticker] = equal_weight
+
+            insights.append({"timestamp": date, "weights": weights})
+
+        return insights
 
 
 # Example usage demonstration
@@ -320,6 +424,51 @@ def example_usage():
 
             return {"timestamp": current_date, "weights": weights}
 
+        def construct_insights_multi(
+            self, data: pd.DataFrame, dates: List[pd.Timestamp]
+        ) -> List[Dict[str, Any]]:
+            """
+            Optimized implementation for processing multiple dates in parallel.
+
+            This implementation demonstrates how to optimize a strategy for
+            parallel processing by avoiding redundant calculations.
+
+            Args:
+                data: Complete DataFrame.
+                dates: List of dates to process.
+
+            Returns:
+                List of insight dictionaries.
+            """
+            insights = []
+            date_column = data.columns[0]  # Assuming first column is date column
+
+            for date in dates:
+                # Get data up to this date
+                date_data = data[data[date_column] <= date]
+
+                # Get latest data for each asset
+                latest_data = date_data.groupby("ticker").last().reset_index()
+
+                # Rank assets
+                ranked_assets = latest_data.sort_values("Momentum", ascending=False)
+
+                # Allocate weights
+                weights = {}
+                for i, (_, row) in enumerate(ranked_assets.iterrows()):
+                    if i == 0:
+                        weights[row["ticker"]] = 0.6
+                    elif i == 1:
+                        weights[row["ticker"]] = 0.3
+                    elif i == 2:
+                        weights[row["ticker"]] = 0.1
+                    else:
+                        weights[row["ticker"]] = 0.0
+
+                insights.append({"timestamp": date, "weights": weights})
+
+            return insights
+
     # Create strategy instance
     momentum_strategy = MomentumStrategy()
 
@@ -331,12 +480,19 @@ def example_usage():
         start_date="2023-01-03",
     )
 
-    # Run the strategy
+    # Run the strategy (serial)
     insights_df = framework.run_strategy()
 
     # Print insights
-    print("Momentum Strategy Results:")
+    print("Momentum Strategy Results (Serial):")
     print(insights_df.head())
+    print("-" * 40)
+
+    # Run the strategy (parallel)
+    parallel_insights_df = framework.run_strategy_parallel(num_processes=2)
+
+    print("\nMomentum Strategy Results (Parallel):")
+    print(parallel_insights_df.head())
     print("-" * 40)
 
     # Also demonstrate using the EqualWeightStrategy
@@ -348,9 +504,9 @@ def example_usage():
         start_date="2023-01-03",
     )
 
-    equal_weight_insights_df = equal_weight_framework.run_strategy()
+    equal_weight_insights_df = equal_weight_framework.run_strategy_parallel()
 
-    print("\nEqual Weight Strategy Results:")
+    print("\nEqual Weight Strategy Results (Parallel):")
     print(equal_weight_insights_df.head(2))
     print("-" * 40)
 

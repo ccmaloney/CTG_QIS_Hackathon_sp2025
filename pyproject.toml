@@ -2,7 +2,7 @@
 name = "quant-strategy-framework"
 version = "0.1.0"
 description = "A simple framework for developing quantitative investment strategies during hackathons"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Charles Maloney <ccmaloney@wisc.edu>"]
 readme = "README.md"
 license = "MIT"
 packages = [{include = "quant_strategy_framework.py"}]
@@ -15,8 +15,9 @@ matplotlib = ">=3.4.0"
 jupyterlab = ">=3.0.0"
 notebook = ">=6.4.0"
 hawk-backtester = "^0.3.3"
-polars = "^0.19.0"
-pyarrow = "^19.0.1"
+polars = "^0.20.7"
+pyarrow = "^18.1.0"
+plotly = "^6.0.1"
 
 [build-system]
 requires = ["poetry-core"]
@@ -33,4 +34,4 @@ target-version = ['py37']
 
 [tool.isort]
 profile = "black"
-line_length = 88 
+line_length = 88
