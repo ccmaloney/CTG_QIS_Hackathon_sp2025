@@ -114,3 +114,39 @@ class MomentumStrategy(BaseStrategy):
             insights.append(insight)
 
         return insights
+
+    # Define a custom strategy by implementing BaseStrategy
+    class MomentumStrategy(BaseStrategy):
+        def construct_insights(
+            self, model_state: pd.DataFrame, current_date: pd.Timestamp
+        ) -> Dict[str, Any]:
+            """
+            Implement a momentum-based strategy.
+
+            Args:
+                model_state: The data up to the current date.
+                current_date: The current trading day.
+
+            Returns:
+                Dictionary with weights based on momentum.
+            """
+            # Simple momentum strategy:
+            # 1. Get the latest data point for each asset
+            latest_data = model_state.groupby("ticker").last().reset_index()
+
+            # 2. Rank assets by momentum
+            ranked_assets = latest_data.sort_values("Momentum", ascending=False)
+
+            # 3. Allocate weights: 60% to top asset, 30% to second, 10% to third
+            weights = {}
+            for i, (_, row) in enumerate(ranked_assets.iterrows()):
+                if i == 0:
+                    weights[row["ticker"]] = 0.6
+                elif i == 1:
+                    weights[row["ticker"]] = 0.3
+                elif i == 2:
+                    weights[row["ticker"]] = 0.1
+                else:
+                    weights[row["ticker"]] = 0.0
+
+            return {"timestamp": current_date, "weights": weights}
