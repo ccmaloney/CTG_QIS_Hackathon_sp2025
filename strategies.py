@@ -1,5 +1,6 @@
 from quant_strategy_framework import BaseStrategy
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+import pandas as pd
 
 
 class MomentumStrategy(BaseStrategy):
@@ -150,3 +151,25 @@ class MomentumStrategy(BaseStrategy):
                     weights[row["ticker"]] = 0.0
 
             return {"timestamp": current_date, "weights": weights}
+
+
+class EqualWeightStrategy(BaseStrategy):
+
+    def construct_insights(self, model_state, current_date):
+        """
+        Implement an equal-weight strategy.
+        """
+
+        # fetch the latest data for each asset
+        latest_data = model_state.groupby("ticker").last().reset_index()
+
+        # initialize weights
+        weights = {}
+        for ticker in model_state["ticker"].unique():
+            weights[ticker] = 0.0
+
+        # allocate equal weights to all assets
+        for ticker in latest_data["ticker"]:
+            weights[ticker] = 1.0 / len(latest_data)
+
+        return {"timestamp": current_date, "weights": weights}
